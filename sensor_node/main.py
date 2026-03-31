@@ -15,7 +15,10 @@ from sklearn.ensemble import RandomForestClassifier
 import joblib
 import os
 import sys
-sys.path.append('/workspaces/AI-Powered-Ambient-Stethoscope-for-Hospital-Acquired-Infections/common')
+import os
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _REPO_ROOT)
+sys.path.insert(0, os.path.join(_REPO_ROOT, "common"))
 from simple_broker import SimpleMQTTClient
 
 # Configuration
@@ -104,7 +107,7 @@ class FeatureExtractor:
 
 class MLClassifier:
     def __init__(self):
-        self.model_path = "/workspaces/AI-Powered-Ambient-Stethoscope-for-Hospital-Acquired-Infections/common/cough_classifier.pkl"
+self.model_path = os.path.join(_REPO_ROOT, "common", "cough_classifier.pkl")
         if os.path.exists(self.model_path):
             self.model = joblib.load(self.model_path)
         else:

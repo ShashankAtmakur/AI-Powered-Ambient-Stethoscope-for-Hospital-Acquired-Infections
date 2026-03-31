@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
 Simple MQTT Broker Simulator for Demo
-A basic in-memory message broker to avoid external dependencies
+A basic in-memory message broker to avoid external dependencies.
+Supports MQTT wildcard patterns: + (single level) and # (multi level).
 """
 
 import threading
 import time
 import queue
 from collections import defaultdict
+import re
 
 # Global shared broker instance
 _shared_broker = None
@@ -22,9 +24,28 @@ def get_shared_broker():
                 _shared_broker = SimpleMQTTBroker()
     return _shared_broker
 
+
+def _topic_matches(pattern: str, topic: str) -> bool:
+    """
+    Check whether an MQTT topic matches a subscription pattern.
+
+    Supports:
+      - ``+`` single-level wildcard (matches exactly one level)
+      - ``#`` multi-level wildcard (matches zero or more levels, must be last)
+      - Exact match
+    """
+    if pattern == topic:
+        return True
+    # Convert MQTT pattern to a regex
+    # Escape everything except our wildcards
+    regex = re.escape(pattern).replace(r"\+", "[^/]+").replace(r"\#", ".+")
+    regex = "^" + regex + "$"
+    return re.match(regex, topic) is not None
+
+
 class SimpleMQTTBroker:
     def __init__(self):
-        self.subscriptions = defaultdict(list)  # topic -> list of queues
+        self.subscriptions = defaultdict(list)  # topic_pattern -> list of queues
         self.lock = threading.Lock()
 
     def subscribe(self, topic_pattern, client_queue):
@@ -33,16 +54,16 @@ class SimpleMQTTBroker:
             self.subscriptions[topic_pattern].append(client_queue)
 
     def publish(self, topic, message):
-        """Publish message to topic"""
+        """Publish message to all matching subscriptions"""
         with self.lock:
-            # Simple pattern matching (just prefix for demo)
             for pattern, queues in self.subscriptions.items():
-                if topic.startswith(pattern) or pattern == topic:
+                if _topic_matches(pattern, topic):
                     for q in queues:
                         try:
                             q.put((topic, message), timeout=1)
-                        except:
+                        except Exception:
                             pass  # Queue full, skip
+
 
 class SimpleMQTTClient:
     def __init__(self, client_id="client"):
@@ -66,7 +87,6 @@ class SimpleMQTTClient:
         """Publish message"""
         if self.connected:
             self.broker.publish(topic, payload)
-            print(f"{self.client_id}: Published to {topic}")
 
     def loop_forever(self):
         """Keep running (for subscribers)"""
@@ -74,7 +94,10 @@ class SimpleMQTTClient:
             try:
                 topic, message = self.message_queue.get(timeout=1)
                 if hasattr(self, 'on_message'):
-                    self.on_message(None, None, type('Message', (), {'topic': topic, 'payload': message})())
+                    self.on_message(
+                        None, None,
+                        type('Message', (), {'topic': topic, 'payload': message})()
+                    )
             except queue.Empty:
                 continue
 

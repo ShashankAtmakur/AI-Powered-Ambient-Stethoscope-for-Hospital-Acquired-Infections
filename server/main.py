@@ -12,13 +12,16 @@ from datetime import datetime, timedelta
 import threading
 import numpy as np
 import sys
-sys.path.append('/workspaces/AI-Powered-Ambient-Stethoscope-for-Hospital-Acquired-Infections/common')
+import os
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _REPO_ROOT)
+sys.path.insert(0, os.path.join(_REPO_ROOT, "common"))
 from simple_broker import SimpleMQTTClient
 
 # Configuration
 MQTT_BROKER = "localhost"
 MQTT_PORT = 1883
-DB_PATH = "/workspaces/AI-Powered-Ambient-Stethoscope-for-Hospital-Acquired-Infections/server/hospital_data.db"
+DB_PATH = os.path.join(_REPO_ROOT, "server", "hospital_data.db")
 
 class DatabaseManager:
     def __init__(self, db_path):

@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  # ── In-process MQTT broker (optional; replace with Mosquitto for production) ──
+  # mosquitto:
+  #   image: eclipse-mosquitto:2
+  #   ports: ["1883:1883"]
+  #   volumes: ["./mosquitto.conf:/mosquitto/config/mosquitto.conf"]
+
+  # ── FastAPI Backend ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: hap-backend:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - MQTT_BROKER=localhost
+      - MQTT_PORT=1883
+      - DB_PATH=/app/data/hospital_data.db
+      - RISK_WINDOW_S=300
+      - SENSOR_PUBLISH_INTERVAL_S=2.0
+    volumes:
+      - hap-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Sensor Simulator ─────────────────────────────────────────────────────────
+  sensor_sim:
+    build:
+      context: .
+      dockerfile: Dockerfile.sensor
+    image: hap-sensor:latest
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - MQTT_BROKER=localhost
+      - MQTT_PORT=1883
+      - SENSOR_PUBLISH_INTERVAL_S=2.0
+    network_mode: "service:backend"   # share backend network for in-process broker
+
+  # ── Streamlit Dashboard ───────────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    image: hap-dashboard:latest
+    ports:
+      - "8501:8501"
+    depends_on:
+      - backend
+    environment:
+      - BACKEND_API_URL=http://backend:8000
+
+volumes:
+  hap-data:

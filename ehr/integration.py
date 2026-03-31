@@ -4,16 +4,18 @@ AI-Powered Ambient Stethoscope - EHR Integration Simulator
 Simulates integration with Electronic Health Record system
 """
 
-import paho.mqtt.client as mqtt
+import sys
+import os
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _REPO_ROOT)
+sys.path.insert(0, os.path.join(_REPO_ROOT, "common"))
 import json
 import sqlite3
 from datetime import datetime
-import sys
-sys.path.append('/workspaces/AI-Powered-Ambient-Stethoscope-for-Hospital-Acquired-Infections/common')
-from simple_broker import SimpleMQTTClient
+from common.simple_broker import SimpleMQTTClient
 
 # Configuration
-EHR_DB_PATH = "/workspaces/AI-Powered-Ambient-Stethoscope-for-Hospital-Acquired-Infections/ehr/ehr_logs.db"
+EHR_DB_PATH = os.path.join(_REPO_ROOT, "ehr", "ehr_logs.db")
 
 class EHRIntegration:
     def __init__(self):
@@ -56,10 +58,12 @@ class EHRIntegration:
         """Generate simulated HL7 message for EHR"""
         # Simplified HL7-like message
         timestamp = datetime.fromisoformat(alert['timestamp']).strftime("%Y%m%d%H%M%S")
+        alert_id = alert.get('id', 'UNKNOWN')
+        patient_id = alert.get('patient_id', 'ANONYMOUS')
 
-        hl7_message = f"""MSH|^~\\&|AMBSTETH|HOSPITAL|EHR|HOSPITAL|{timestamp}||ORU^R01|{alert['id']}|P|2.5
-PID|1||{alert['patient_id']}||Patient^Name||19700101|M|||123 Main St^^Anytown^ST^12345||(555)555-5555|||||
-OBR|1||{alert['id']}|RESP^Respiratory Alert|||20240101||||||{timestamp}||||||||||F
+        hl7_message = f"""MSH|^~\\&|AMBSTETH|HOSPITAL|EHR|HOSPITAL|{timestamp}||ORU^R01|{alert_id}|P|2.5
+PID|1||{patient_id}||Patient^Name||19700101|M|||123 Main St^^Anytown^ST^12345||(555)555-5555|||||
+OBR|1||{alert_id}|RESP^Respiratory Alert|||20240101||||||{timestamp}||||||||||F
 OBX|1|ST|ALERT_TYPE||{alert['alert_type']}||||||F
 OBX|2|ST|SEVERITY||{alert['severity']}||||||F
 OBX|3|ST|MESSAGE||{alert['message']}||||||F
@@ -78,7 +82,7 @@ OBX|4|ST|ROOM||{alert['room_id']}||||||F"""
                 VALUES (?, ?, ?, ?, ?)
             ''', (
                 alert['timestamp'],
-                alert['patient_id'],
+                alert.get('patient_id', 'ANONYMOUS'),
                 'respiratory_alert',
                 json.dumps(alert),
                 hl7_message

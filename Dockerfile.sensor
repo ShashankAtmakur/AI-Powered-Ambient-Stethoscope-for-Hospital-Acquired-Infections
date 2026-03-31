@@ -1,0 +1,15 @@
+# sensor_sim/Dockerfile
+# Builds the multi-room sensor simulator
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "-m", "sensor_sim.main"]

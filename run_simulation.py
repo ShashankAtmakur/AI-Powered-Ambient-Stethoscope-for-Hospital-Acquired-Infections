@@ -1,86 +1,112 @@
 #!/usr/bin/env python3
 """
-AI-Powered Ambient Stethoscope - Complete System Simulator
-Runs all components of the hospital monitoring system
+run_simulation.py
+Single-command launcher for the complete AI Ambient Stethoscope simulator.
+
+Architecture
+------------
+The backend runs in embedded mode (EMBEDDED_SENSOR=1), starting the multi-room
+sensor simulator in-process so that both share the same in-memory MQTT broker.
+The Streamlit dashboard is launched as a separate process and communicates with
+the backend via REST/WebSocket.
+
+Usage::
+
+    python run_simulation.py
+
+Stop with Ctrl+C.
 """
 
-import subprocess
-import time
-import signal
-import sys
+from __future__ import annotations
+
 import os
+import signal
+import subprocess
+import sys
+import time
 
-def run_component(name, command, cwd=None):
-    """Run a component in background"""
-    print(f"Starting {name}...")
-    if cwd:
-        process = subprocess.Popen(command, shell=True, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    else:
-        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    return process
+REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+PYTHON = sys.executable
 
-def main():
-    processes = []
+
+def _spawn(name: str, cmd: list[str], extra_env: dict | None = None) -> subprocess.Popen:
+    env = dict(os.environ)
+    env["PYTHONPATH"] = REPO_ROOT
+    if extra_env:
+        env.update(extra_env)
+    print(f"  ▶  Starting {name}…")
+    return subprocess.Popen(cmd, env=env, cwd=REPO_ROOT)
+
+
+def main() -> None:
+    procs: list[tuple[str, subprocess.Popen]] = []
 
     try:
-        # Note: Using built-in simple MQTT broker simulator
-        print("Using built-in MQTT broker simulator (no external dependencies)")
+        # 1. Backend (includes embedded sensor simulator)
+        backend = _spawn(
+            "FastAPI Backend + Embedded Sensor Simulator",
+            [PYTHON, "-m", "uvicorn", "backend.app:app",
+             "--host", "0.0.0.0", "--port", "8000"],
+            extra_env={"EMBEDDED_SENSOR": "1"},
+        )
+        procs.append(("FastAPI Backend", backend))
+        time.sleep(3)   # wait for backend + simulator to start
+
+        # 2. Streamlit dashboard
+        dashboard = _spawn(
+            "Streamlit Dashboard",
+            [PYTHON, "-m", "streamlit", "run",
+             "dashboard/streamlit_app.py",
+             "--server.port=8501",
+             "--server.headless=true",
+             "--server.address=0.0.0.0"],
+            extra_env={"BACKEND_API_URL": "http://localhost:8000"},
+        )
+        procs.append(("Streamlit Dashboard", dashboard))
+
         print()
+        print("=" * 62)
+        print("🎉  AI-Powered Ambient Stethoscope Simulator Running!")
+        print("=" * 62)
+        print("  📊  Dashboard     → http://localhost:8501")
+        print("  🔌  Backend API   → http://localhost:8000")
+        print("  📖  API Docs      → http://localhost:8000/docs")
+        print()
+        print("  Demo scripts (run in another terminal):")
+        print("    python scripts/demo_deterioration.py       # inject episode")
+        print("    python scripts/demo_clear_alert.py         # acknowledge all")
+        print("    python scripts/demo_normal.py              # restore baseline")
+        print()
+        print("  Press Ctrl+C to stop all components.")
+        print("=" * 62)
 
-        # Start server
-        server_cmd = "python3 server/main.py"
-        server_process = run_component("Hospital Server", server_cmd)
-        processes.append(("Hospital Server", server_process))
-        time.sleep(2)  # Wait for server to start
+        def _shutdown(sig, frame):  # noqa: ANN001
+            print("\nShutting down…")
+            for name, proc in procs:
+                print(f"  ■  Stopping {name}…")
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            sys.exit(0)
 
-        # Start sensor node
-        sensor_cmd = "python3 sensor_node/main.py"
-        sensor_process = run_component("Sensor Node", sensor_cmd)
-        processes.append(("Sensor Node", sensor_process))
-        time.sleep(1)
+        signal.signal(signal.SIGINT, _shutdown)
+        signal.signal(signal.SIGTERM, _shutdown)
 
-        # Start dashboard
-        dashboard_cmd = "python3 dashboard/app.py"
-        dashboard_process = run_component("Dashboard", dashboard_cmd, cwd="dashboard")
-        processes.append(("Dashboard", dashboard_process))
-        time.sleep(1)
-
-        # Start mobile app
-        mobile_cmd = "python3 mobile/app.py"
-        mobile_process = run_component("Mobile App", mobile_cmd)
-        processes.append(("Mobile App", mobile_process))
-        time.sleep(1)
-
-        # Start EHR integration
-        ehr_cmd = "python3 ehr/integration.py"
-        ehr_process = run_component("EHR Integration", ehr_cmd)
-        processes.append(("EHR Integration", ehr_process))
-
-        print("\n" + "="*60)
-        print("🎉 AI-Powered Ambient Stethoscope Simulator Running!")
-        print("="*60)
-        print("📊 Dashboard: http://localhost:5000")
-        print("🏥 Server: Processing respiratory data")
-        print("📱 Mobile: Receiving alerts")
-        print("🏥 EHR: Logging alerts")
-        print("🦠 Sensor: Simulating cough detection")
-        print("\nPress Ctrl+C to stop all components")
-        print("="*60)
-
-        # Wait for interrupt
         while True:
             time.sleep(1)
 
     except KeyboardInterrupt:
-        print("\nShutting down all components...")
-        for name, process in processes:
-            print(f"Stopping {name}...")
-            process.terminate()
+        pass
+    finally:
+        for _, proc in procs:
+            proc.terminate()
             try:
-                process.wait(timeout=5)
+                proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                process.kill()
-        print("All components stopped.")
+                proc.kill()
+
 
 if __name__ == "__main__":
     main()

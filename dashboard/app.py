@@ -11,12 +11,15 @@ from datetime import datetime, timedelta
 # import paho.mqtt.client as mqtt
 import threading
 import sys
-sys.path.append('/workspaces/AI-Powered-Ambient-Stethoscope-for-Hospital-Acquired-Infections/common')
+import os
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _REPO_ROOT)
+sys.path.insert(0, os.path.join(_REPO_ROOT, "common"))
 from simple_broker import SimpleMQTTClient
 
 app = Flask(__name__)
 
-DB_PATH = "/workspaces/AI-Powered-Ambient-Stethoscope-for-Hospital-Acquired-Infections/server/hospital_data.db"
+DB_PATH = os.path.join(_REPO_ROOT, "server", "hospital_data.db")
 
 class DashboardData:
     def __init__(self):

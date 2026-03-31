@@ -4,13 +4,15 @@ AI-Powered Ambient Stethoscope - Mobile App Simulator
 Simulates mobile app receiving alerts and displaying notifications
 """
 
-import paho.mqtt.client as mqtt
+import sys
+import os
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _REPO_ROOT)
+sys.path.insert(0, os.path.join(_REPO_ROOT, "common"))
 import json
 import time
 from datetime import datetime
-import sys
-sys.path.append('/workspaces/AI-Powered-Ambient-Stethoscope-for-Hospital-Acquired-Infections/common')
-from simple_broker import SimpleMQTTClient
+from common.simple_broker import SimpleMQTTClient
 
 class MobileApp:
     def __init__(self, nurse_id="nurse_001"):

@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS room_events (
     cough_detected  INTEGER NOT NULL DEFAULT 0,
     cough_confidence REAL   NOT NULL DEFAULT 0,
     coughs_per_min  REAL    NOT NULL DEFAULT 0,
+    sneezes_per_min REAL    NOT NULL DEFAULT 0,
+    snores_per_min  REAL    NOT NULL DEFAULT 0,
     wheeze_detected INTEGER NOT NULL DEFAULT 0,
     wheeze_confidence REAL  NOT NULL DEFAULT 0,
     breath_rate_bpm REAL    NOT NULL DEFAULT 14,
@@ -89,6 +91,18 @@ class Database:
         with self._connect() as conn:
             conn.executescript(_DDL_EVENTS)
             conn.executescript(_DDL_ALERTS)
+            cols = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(room_events)").fetchall()
+            }
+            if "sneezes_per_min" not in cols:
+                conn.execute(
+                    "ALTER TABLE room_events ADD COLUMN sneezes_per_min REAL NOT NULL DEFAULT 0"
+                )
+            if "snores_per_min" not in cols:
+                conn.execute(
+                    "ALTER TABLE room_events ADD COLUMN snores_per_min REAL NOT NULL DEFAULT 0"
+                )
         logger.info("Database initialised at %s", self.db_path)
 
     # ── Events ────────────────────────────────────────────────────────────────
@@ -97,10 +111,11 @@ class Database:
         sql = """
             INSERT INTO room_events
             (room_id, timestamp, scenario, cough_detected, cough_confidence,
-             coughs_per_min, wheeze_detected, wheeze_confidence,
+             coughs_per_min, sneezes_per_min, snores_per_min,
+             wheeze_detected, wheeze_confidence,
              breath_rate_bpm, breath_irregularity, spo2_pct,
              temperature_c, ambient_noise_db, anomaly_label, anomaly_score)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """
         with self._connect() as conn:
             conn.execute(sql, (
@@ -110,6 +125,8 @@ class Database:
                 int(event.cough_detected),
                 event.cough_confidence,
                 event.coughs_per_min,
+                event.sneezes_per_min,
+                event.snores_per_min,
                 int(event.wheeze_detected),
                 event.wheeze_confidence,
                 event.breath_rate_bpm,

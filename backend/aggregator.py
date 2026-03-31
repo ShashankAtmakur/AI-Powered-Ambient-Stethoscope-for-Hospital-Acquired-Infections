@@ -15,6 +15,7 @@ import os
 import sys
 import threading
 from datetime import datetime, timezone
+from statistics import mean
 from typing import Callable, Dict, Optional
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -27,6 +28,40 @@ from backend.database import Database
 from backend.alert_engine import AlertEngine, RoomBuffer
 
 logger = logging.getLogger(__name__)
+
+DISEASE_PREDICTION_WINDOW_SIZE = 30
+DISEASE_NONE = "none"
+DISEASE_PNEUMONIA = "pneumonia"
+DISEASE_URI = "upper_respiratory_infection"
+DISEASE_SLEEP_APNEA = "sleep_apnea"
+
+# Heuristic disease-probability model weights/thresholds
+_PNEUMONIA_RISK_W = 0.45
+_PNEUMONIA_COUGH_W = 0.20
+_PNEUMONIA_SPO2_W = 0.20
+_PNEUMONIA_TEMP_W = 0.15
+_PNEUMONIA_COUGH_SCALE = 6.0
+_PNEUMONIA_SPO2_LOW = 94.0
+_PNEUMONIA_SPO2_SCALE = 6.0
+_PNEUMONIA_TEMP_HIGH = 38.0
+_PNEUMONIA_TEMP_SCALE = 2.0
+
+_URI_SNEEZE_W = 0.35
+_URI_COUGH_W = 0.30
+_URI_TEMP_W = 0.20
+_URI_RISK_W = 0.15
+_URI_SNEEZE_SCALE = 4.0
+_URI_COUGH_SCALE = 5.0
+_URI_TEMP_HIGH = 37.5
+_URI_TEMP_SCALE = 2.0
+
+_SLEEP_APNEA_SNORE_W = 0.55
+_SLEEP_APNEA_SPO2_W = 0.30
+_SLEEP_APNEA_BREATH_IRREGULARITY_W = 0.15
+_SLEEP_APNEA_SNORE_SCALE = 8.0
+_SLEEP_APNEA_SPO2_LOW = 95.0
+_SLEEP_APNEA_SPO2_SCALE = 7.0
+_SLEEP_APNEA_BREATH_IRREGULARITY_SCALE = 1.0
 
 
 class Aggregator(threading.Thread):
@@ -78,6 +113,13 @@ class Aggregator(threading.Thread):
         risk = self.engine.compute_risk_score(recent)
         latest = buf.latest()
         assert latest is not None
+        disease_probabilities = self._predict_disease_probabilities(recent, risk)
+        likely_disease = (
+            max(disease_probabilities, key=disease_probabilities.get)
+            if disease_probabilities
+            else DISEASE_NONE
+        )
+        affected = likely_disease != DISEASE_NONE
 
         from shared.config import (
             ALERT_RISK_SCORE_CRITICAL, ALERT_RISK_SCORE_HIGH,
@@ -114,13 +156,87 @@ class Aggregator(threading.Thread):
             breath_rate_bpm=latest.breath_rate_bpm,
             breath_irregularity=latest.breath_irregularity,
             coughs_per_min=latest.coughs_per_min,
+            sneezes_per_min=latest.sneezes_per_min,
+            snores_per_min=latest.snores_per_min,
             wheeze_detected=latest.wheeze_detected,
             spo2_pct=latest.spo2_pct,
             temperature_c=latest.temperature_c,
             risk_score=risk,
             alert_level=alert_level,
+            disease_probabilities=disease_probabilities,
+            likely_disease=likely_disease,
+            affected=affected,
             active_alerts=active_alerts,
         )
+
+    def _predict_disease_probabilities(
+        self, events: list[RoomEvent], risk: float
+    ) -> dict[str, float]:
+        """
+        Produce heuristic per-room disease likelihoods from recent event patterns.
+
+        This is a lightweight rules-based model intended for demo/triage display,
+        not a diagnostic model. It combines signal intensity (cough/sneeze/snore),
+        oxygen saturation, temperature, breathing irregularity, and the existing
+        room risk score into bounded per-disease probabilities in [0, 1].
+        The "none" score is a simplified complement of the strongest disease
+        signal (not a normalized mutually-exclusive probability distribution).
+        """
+        if not events:
+            return {
+                DISEASE_NONE: 1.0,
+                DISEASE_PNEUMONIA: 0.0,
+                DISEASE_URI: 0.0,
+                DISEASE_SLEEP_APNEA: 0.0,
+            }
+        window = (
+            events[-DISEASE_PREDICTION_WINDOW_SIZE:]
+            if len(events) > DISEASE_PREDICTION_WINDOW_SIZE
+            else events
+        )
+        avg_cough = mean(e.coughs_per_min for e in window)
+        avg_sneeze = mean(e.sneezes_per_min for e in window)
+        avg_snore = mean(e.snores_per_min for e in window)
+        avg_spo2 = mean(e.spo2_pct for e in window)
+        avg_temp = mean(e.temperature_c for e in window)
+        avg_breath_irregularity = mean(e.breath_irregularity for e in window)
+
+        pneumonia = min(
+            1.0,
+            _PNEUMONIA_RISK_W * risk
+            + _PNEUMONIA_COUGH_W * min(avg_cough / _PNEUMONIA_COUGH_SCALE, 1.0)
+            + _PNEUMONIA_SPO2_W
+            * min(max(_PNEUMONIA_SPO2_LOW - avg_spo2, 0.0) / _PNEUMONIA_SPO2_SCALE, 1.0)
+            + _PNEUMONIA_TEMP_W
+            * min(max(avg_temp - _PNEUMONIA_TEMP_HIGH, 0.0) / _PNEUMONIA_TEMP_SCALE, 1.0),
+        )
+        upper_respiratory_infection = min(
+            1.0,
+            _URI_SNEEZE_W * min(avg_sneeze / _URI_SNEEZE_SCALE, 1.0)
+            + _URI_COUGH_W * min(avg_cough / _URI_COUGH_SCALE, 1.0)
+            + _URI_TEMP_W * min(max(avg_temp - _URI_TEMP_HIGH, 0.0) / _URI_TEMP_SCALE, 1.0)
+            + _URI_RISK_W * risk,
+        )
+        sleep_apnea = min(
+            1.0,
+            _SLEEP_APNEA_SNORE_W * min(avg_snore / _SLEEP_APNEA_SNORE_SCALE, 1.0)
+            + _SLEEP_APNEA_SPO2_W
+            * min(max(_SLEEP_APNEA_SPO2_LOW - avg_spo2, 0.0) / _SLEEP_APNEA_SPO2_SCALE, 1.0)
+            + _SLEEP_APNEA_BREATH_IRREGULARITY_W
+            * min(
+                max(avg_breath_irregularity, 0.0)
+                / _SLEEP_APNEA_BREATH_IRREGULARITY_SCALE,
+                1.0,
+            ),
+        )
+        disease_peak = max(pneumonia, upper_respiratory_infection, sleep_apnea)
+        none = max(0.0, 1.0 - disease_peak)
+        return {
+            DISEASE_NONE: round(none, 4),
+            DISEASE_PNEUMONIA: round(pneumonia, 4),
+            DISEASE_URI: round(upper_respiratory_infection, 4),
+            DISEASE_SLEEP_APNEA: round(sleep_apnea, 4),
+        }
 
     # ── MQTT handling ─────────────────────────────────────────────────────────
 

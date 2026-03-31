@@ -52,6 +52,8 @@ class RoomEvent(BaseModel):
     cough_detected: bool = False
     cough_confidence: float = Field(0.0, ge=0.0, le=1.0)
     coughs_per_min: float = Field(0.0, ge=0.0)
+    sneezes_per_min: float = Field(0.0, ge=0.0)
+    snores_per_min: float = Field(0.0, ge=0.0)
     wheeze_detected: bool = False
     wheeze_confidence: float = Field(0.0, ge=0.0, le=1.0)
 
@@ -93,11 +95,16 @@ class RoomStatus(BaseModel):
     breath_rate_bpm: float = 14.0
     breath_irregularity: float = 0.0
     coughs_per_min: float = 0.0
+    sneezes_per_min: float = 0.0
+    snores_per_min: float = 0.0
     wheeze_detected: bool = False
     spo2_pct: float = 97.5
     temperature_c: float = 37.0
     risk_score: float = 0.0
     alert_level: str = "normal"   # "normal" | "medium" | "high" | "critical"
+    disease_probabilities: dict[str, float] = Field(default_factory=dict)
+    likely_disease: str = "none"
+    affected: bool = False
     active_alerts: list[RoomAlert] = Field(default_factory=list)
 
 

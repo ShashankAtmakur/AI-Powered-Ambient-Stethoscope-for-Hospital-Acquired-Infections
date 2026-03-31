@@ -92,6 +92,18 @@ def generate_features(room_id: str) -> Dict[str, Any]:
     # coughs_per_min: direct per-window estimate (window = ~2 s; each cough event
     # represents a detected cough in that window; scaled to /min)
     coughs_per_min = cough_confidence * 10.0 if cough_detected else 0.0
+    sneeze_prob = _lerp(0.03, 0.25, p)
+    snore_prob = _lerp(0.04, 0.35, p)
+    sneezes_per_min = (
+        float(np.clip(np.random.beta(4, 3) * 6.0, 0.0, 12.0))
+        if random.random() < sneeze_prob
+        else 0.0
+    )
+    snores_per_min = (
+        float(np.clip(np.random.beta(5, 2) * 8.0, 0.0, 18.0))
+        if random.random() < snore_prob
+        else 0.0
+    )
 
     wheeze_detected = random.random() < wheeze_prob
     wheeze_confidence = float(np.clip(np.random.beta(5, 2) * 0.9 + 0.1, 0.0, 1.0)) if wheeze_detected else 0.0
@@ -107,6 +119,8 @@ def generate_features(room_id: str) -> Dict[str, Any]:
         "cough_detected": cough_detected,
         "cough_confidence": round(cough_confidence, 4),
         "coughs_per_min": round(coughs_per_min, 2),
+        "sneezes_per_min": round(sneezes_per_min, 2),
+        "snores_per_min": round(snores_per_min, 2),
         "wheeze_detected": wheeze_detected,
         "wheeze_confidence": round(wheeze_confidence, 4),
         "breath_rate_bpm": round(breath_rate, 2),

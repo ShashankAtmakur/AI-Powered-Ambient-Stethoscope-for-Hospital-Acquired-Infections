@@ -148,9 +148,13 @@ for idx, room_id in enumerate(ROOM_IDS):
         risk = status.get("risk_score", 0.0)
         br = status.get("breath_rate_bpm", 0.0)
         cpm = status.get("coughs_per_min", 0.0)
+        spm = status.get("sneezes_per_min", 0.0)
+        snpm = status.get("snores_per_min", 0.0)
         spo2 = status.get("spo2_pct", 0.0)
         temp = status.get("temperature_c", 0.0)
         scenario = status.get("scenario", "normal")
+        likely_disease = status.get("likely_disease", "none")
+        disease_probs = status.get("disease_probabilities", {})
         is_detn = scenario == "deteriorating"
 
         border = _risk_color(level)
@@ -163,13 +167,24 @@ for idx, room_id in enumerate(ROOM_IDS):
             <table style='width:100%;font-size:.9rem'>
               <tr><td>🫁 Breath Rate</td><td><b>{br:.1f} bpm</b></td></tr>
               <tr><td>💨 Coughs/min</td><td><b>{cpm:.1f}</b></td></tr>
+              <tr><td>🤧 Sneezes/min</td><td><b>{spm:.1f}</b></td></tr>
+              <tr><td>😴 Snores/min</td><td><b>{snpm:.1f}</b></td></tr>
               <tr><td>🩸 SpO₂</td>       <td><b>{spo2:.1f}%</b></td></tr>
               <tr><td>🌡 Temperature</td><td><b>{temp:.1f}°C</b></td></tr>
               <tr><td>📊 Risk Score</td> <td><b>{risk:.2f}</b></td></tr>
+              <tr><td>🧪 Likely Disease</td><td><b>{likely_disease.replace('_',' ').title()}</b></td></tr>
             </table>
             </div>""",
             unsafe_allow_html=True,
         )
+        if disease_probs:
+            st.caption(
+                "Probabilities: "
+                + " · ".join(
+                    f"{k.replace('_', ' ').title()} {v:.0%}"
+                    for k, v in disease_probs.items()
+                )
+            )
 
         # Scenario control buttons
         btn_col1, btn_col2 = st.columns(2)

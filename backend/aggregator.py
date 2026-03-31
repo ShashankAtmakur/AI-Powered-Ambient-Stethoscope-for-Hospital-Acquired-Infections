@@ -15,6 +15,7 @@ import os
 import sys
 import threading
 from datetime import datetime, timezone
+from statistics import mean
 from typing import Callable, Dict, Optional
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -78,6 +79,9 @@ class Aggregator(threading.Thread):
         risk = self.engine.compute_risk_score(recent)
         latest = buf.latest()
         assert latest is not None
+        disease_probabilities = self._predict_disease_probabilities(recent, risk)
+        likely_disease = max(disease_probabilities, key=disease_probabilities.get)
+        affected = likely_disease != "none"
 
         from shared.config import (
             ALERT_RISK_SCORE_CRITICAL, ALERT_RISK_SCORE_HIGH,
@@ -114,13 +118,59 @@ class Aggregator(threading.Thread):
             breath_rate_bpm=latest.breath_rate_bpm,
             breath_irregularity=latest.breath_irregularity,
             coughs_per_min=latest.coughs_per_min,
+            sneezes_per_min=latest.sneezes_per_min,
+            snores_per_min=latest.snores_per_min,
             wheeze_detected=latest.wheeze_detected,
             spo2_pct=latest.spo2_pct,
             temperature_c=latest.temperature_c,
             risk_score=risk,
             alert_level=alert_level,
+            disease_probabilities=disease_probabilities,
+            likely_disease=likely_disease,
+            affected=affected,
             active_alerts=active_alerts,
         )
+
+    def _predict_disease_probabilities(
+        self, events: list[RoomEvent], risk: float
+    ) -> dict[str, float]:
+        if not events:
+            return {"none": 1.0, "pneumonia": 0.0, "upper_respiratory_infection": 0.0, "sleep_apnea": 0.0}
+        window = events[-30:] if len(events) > 30 else events
+        avg_cough = mean(e.coughs_per_min for e in window)
+        avg_sneeze = mean(e.sneezes_per_min for e in window)
+        avg_snore = mean(e.snores_per_min for e in window)
+        avg_spo2 = mean(e.spo2_pct for e in window)
+        avg_temp = mean(e.temperature_c for e in window)
+
+        pneumonia = min(
+            1.0,
+            0.45 * risk
+            + 0.20 * min(avg_cough / 6.0, 1.0)
+            + 0.20 * min(max(94.0 - avg_spo2, 0.0) / 6.0, 1.0)
+            + 0.15 * min(max(avg_temp - 38.0, 0.0) / 2.0, 1.0),
+        )
+        upper_respiratory_infection = min(
+            1.0,
+            0.35 * min(avg_sneeze / 4.0, 1.0)
+            + 0.30 * min(avg_cough / 5.0, 1.0)
+            + 0.20 * min(max(avg_temp - 37.5, 0.0) / 2.0, 1.0)
+            + 0.15 * risk,
+        )
+        sleep_apnea = min(
+            1.0,
+            0.55 * min(avg_snore / 8.0, 1.0)
+            + 0.30 * min(max(95.0 - avg_spo2, 0.0) / 7.0, 1.0)
+            + 0.15 * min(max(mean(e.breath_irregularity for e in window), 0.0), 1.0),
+        )
+        disease_peak = max(pneumonia, upper_respiratory_infection, sleep_apnea)
+        none = max(0.0, 1.0 - disease_peak)
+        return {
+            "none": round(none, 4),
+            "pneumonia": round(pneumonia, 4),
+            "upper_respiratory_infection": round(upper_respiratory_infection, 4),
+            "sleep_apnea": round(sleep_apnea, 4),
+        }
 
     # ── MQTT handling ─────────────────────────────────────────────────────────
 

@@ -19,6 +19,9 @@ class PatientScenario(str, Enum):
     """Simulated patient health state controlled by the demo operator."""
     NORMAL = "normal"
     DETERIORATING = "deteriorating"
+    PNEUMONIA_LIKE = "pneumonia_like"
+    URI_LIKE = "uri_like"
+    SLEEP_APNEA_LIKE = "sleep_apnea_like"
 
 
 class AlertSeverity(str, Enum):

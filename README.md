@@ -13,6 +13,8 @@
 | **Privacy-by-design** | Acoustic *features* only — zero raw audio stored |
 | **Real-time alerts** | Escalating per-room HAP risk scores |
 | **Multi-room** | 6 simulated ward rooms with independent state |
+| **Multi-disease replication** | Different disease-like profiles per room (pneumonia/URI/sleep apnea) |
+| **Patient-only sound isolation** | Extract cough/sneeze/crackle/wheeze and suppress likely conversation |
 | **Wow moment** | Click "Simulate Deterioration" → watch risk escalate live |
 
 ---
@@ -57,6 +59,7 @@
     main.py           Entry point
   edge_ml/
     classifier.py     Rule-based event labeller (no audio used)
+    real_audio.py     Optional real-dataset training/inference utilities
   backend/
     app.py            FastAPI routes + WebSocket endpoint
     aggregator.py     MQTT subscriber + buffer management
@@ -74,7 +77,12 @@
   scripts/
     demo_normal.py         Reset all rooms to normal
     demo_deterioration.py  Inject acute episode into room 312A
+    demo_multidisease.py   Assign different diseases across rooms
     demo_clear_alert.py    Acknowledge all active alerts
+    build_real_audio_manifest.py  Auto-build manifest from ICBHI + COUGHVID (+ ESC-50 sneeze)
+    train_real_audio_model.py   Train classifier from real respiratory datasets
+    extract_patient_sounds.py   Keep cough/sneeze/crackle/wheeze only
+    real_audio_manifest_template.csv
   Dockerfile.backend
   Dockerfile.dashboard
   Dockerfile.sensor
@@ -96,6 +104,8 @@ pip install -r requirements.txt
 
 # 2. Launch everything
 python run_simulation.py
+# or
+python run_simulator.py
 ```
 
 Then open:
@@ -123,6 +133,30 @@ PYTHONPATH=. streamlit run dashboard/streamlit_app.py --server.port 8501
 
 ---
 
+## Publish-Ready Checklist
+
+This repository now includes baseline release engineering assets:
+
+- CI pipeline: `.github/workflows/ci.yml` (lint + type-check + tests on Python 3.10/3.11/3.12)
+- Project metadata and tool configuration: `pyproject.toml`
+- Contributor onboarding: `CONTRIBUTING.md`
+- Security reporting policy: `SECURITY.md`
+- Community conduct policy: `CODE_OF_CONDUCT.md`
+- Example runtime environment file: `.env.example`
+- Optional local hook automation: `.pre-commit-config.yaml`
+
+Run the same quality gate locally before publishing:
+
+```bash
+pip install -r requirements.txt
+pip install -e .[dev]
+ruff check .
+mypy backend edge_ml sensor_sim shared
+pytest
+```
+
+---
+
 ## 🎬 Demo Walkthrough
 
 ### 1. Normal baseline
@@ -130,11 +164,15 @@ All rooms show green indicators with stable breath rates (~14 bpm) and low cough
 
 ### 2. Simulate deterioration (Wow Moment)
 
-**Via Dashboard:**  Click the **🔴 Deteriorate** button on any room card.
+**Via Dashboard:**
+- Choose **Scenario** per room and click **Apply**
+- Use different scenarios across rooms to compare disease probabilities live
 
 **Via script:**
 ```bash
 python scripts/demo_deterioration.py 312A
+python scripts/demo_deterioration.py --scenario pneumonia_like 312B
+python scripts/demo_multidisease.py
 ```
 
 **What happens:**
@@ -150,6 +188,9 @@ python scripts/demo_deterioration.py 312A
 python scripts/demo_clear_alert.py
 ```
 or click **✓ Ack** buttons in the dashboard.
+
+Note: the backend ACK endpoint now accepts both payload and payload-less POSTs,
+so ACK buttons/scripts remain compatible across dashboard variants.
 
 ### 4. Restore normal
 ```bash
@@ -188,6 +229,101 @@ All settings are in `shared/config.py` and can be overridden with environment va
 | POST | `/rooms/{id}/scenario` | Change room scenario (normal/deteriorating) |
 | GET | `/summary` | Ward-wide summary |
 | WS | `/ws` | WebSocket live updates |
+
+Supported scenario values:
+- `normal`
+- `deteriorating`
+- `pneumonia_like`
+- `uri_like`
+- `sleep_apnea_like`
+
+---
+
+## Real Respiratory Sound Datasets + Model Pipeline
+
+This repository now includes an optional real-audio workflow:
+1. Train a respiratory-event classifier from real datasets
+2. Use that model to isolate patient respiratory sounds only
+
+### Suggested open datasets
+
+- **COUGHVID** (large cough corpus, Zenodo): https://doi.org/10.5281/zenodo.7024894
+- **ICBHI 2017 Challenge** (respiratory cycles with crackles/wheezes): https://bhichallenge.med.auth.gr/ICBHI_2017_Challenge
+
+### Sneeze dataset sources
+
+For explicit `sneeze` labels, add one of the following open sources:
+
+- **ESC-50** (contains a `sneezing` class): https://github.com/karolpiczak/ESC-50
+- **FSD50K** (can be filtered for sneeze-tagged clips): https://zenodo.org/records/4060432
+
+Important: review each dataset license and use policy before redistribution or commercial use.
+
+### Step 1: Build a labeled manifest
+
+You can auto-generate a manifest from your local datasets:
+
+```bash
+python scripts/build_real_audio_manifest.py \
+  --icbhi-dir datasets/ICBHI_final_database/ICBHI_final_database \
+  --coughvid-dir datasets/public_dataset_v3/coughvid_20211012 \
+  --esc50-dir datasets/ESC-50-master/ESC-50-master \
+  --output datasets/real_audio_manifest.csv
+```
+
+Generated CSV columns:
+- `audio_path`
+- `label`
+- `start_s` (optional segment start)
+- `end_s` (optional segment end)
+- `source`
+
+Template file: `scripts/real_audio_manifest_template.csv`
+
+Current auto labels from these datasets:
+- `cough` (COUGHVID)
+- `crackle`, `wheeze`, `ambient` (ICBHI cycle annotations)
+- `sneeze` (ESC-50 `sneezing` class, when `--esc50-dir` is provided)
+
+Note: `sneeze` labels are usually not available in ICBHI/COUGHVID and require an additional dataset such as ESC-50.
+
+### Step 2: Train the classifier
+
+```bash
+python scripts/train_real_audio_model.py \
+  --manifest datasets/real_audio_manifest.csv \
+  --output models/respiratory_event_model.joblib
+```
+
+### Step 3: Extract patient-only respiratory sounds
+
+```bash
+python scripts/extract_patient_sounds.py \
+  --input <mixed_audio.wav> \
+  --output outputs/patient_respiratory_events.wav \
+  --model models/respiratory_event_model.joblib \
+  --target-labels cough,sneeze,crackle,wheeze
+```
+
+### Dashboard audio feature
+
+In Streamlit:
+- Upload mixed audio under **Audio Isolation (Cough/Sneeze/Crackle/Wheeze)**
+- Select labels to keep
+- Click **Extract patient-only sounds**
+- Listen to/download the cleaned respiratory-only audio
+
+Room-level disease prediction workflow:
+- Choose a dataset sample label and test sample inside each room card
+- Click **Deteriorate + Predict** to:
+  - set room scenario to deteriorating
+  - run respiratory-event prediction on the selected sample
+  - map event probabilities to disease probabilities
+  - auto-generate and play filtered respiratory-only audio (conversation suppressed)
+- Use **Play sample** and **Play filtered** buttons to compare raw vs extracted respiratory sounds
+
+If no model file is present, a heuristic fallback is used to suppress likely
+speech/background and keep candidate respiratory events.
 
 ---
 

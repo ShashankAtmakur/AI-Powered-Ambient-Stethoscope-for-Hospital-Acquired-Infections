@@ -115,7 +115,7 @@ class Aggregator(threading.Thread):
         assert latest is not None
         disease_probabilities = self._predict_disease_probabilities(recent, risk)
         likely_disease = (
-            max(disease_probabilities, key=disease_probabilities.get)
+            max(disease_probabilities, key=lambda k: disease_probabilities[k])
             if disease_probabilities
             else DISEASE_NONE
         )

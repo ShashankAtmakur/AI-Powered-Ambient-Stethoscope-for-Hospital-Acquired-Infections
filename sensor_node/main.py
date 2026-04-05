@@ -9,13 +9,14 @@ import random
 import json
 # import paho.mqtt.client as mqtt
 from datetime import datetime
+import os
+import sys
+
 import numpy as np
 # import librosa  # Simplified for demo
 from sklearn.ensemble import RandomForestClassifier
 import joblib
-import os
-import sys
-import os
+
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _REPO_ROOT)
 sys.path.insert(0, os.path.join(_REPO_ROOT, "common"))
@@ -107,7 +108,7 @@ class FeatureExtractor:
 
 class MLClassifier:
     def __init__(self):
-self.model_path = os.path.join(_REPO_ROOT, "common", "cough_classifier.pkl")
+        self.model_path = os.path.join(_REPO_ROOT, "common", "cough_classifier.pkl")
         if os.path.exists(self.model_path):
             self.model = joblib.load(self.model_path)
         else:

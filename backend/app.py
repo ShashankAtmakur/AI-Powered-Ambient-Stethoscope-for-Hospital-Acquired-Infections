@@ -185,12 +185,22 @@ def get_all_active_alerts() -> List[RoomAlert]:
 
 
 @app.post("/alerts/{alert_id}/acknowledge")
-def acknowledge_alert(alert_id: int, body: AcknowledgeRequest) -> Dict[str, Any]:
+def acknowledge_alert(
+    alert_id: int,
+    body: Optional[AcknowledgeRequest] = None,
+) -> Dict[str, Any]:
     """Acknowledge an alert."""
-    ok = db.acknowledge_alert(alert_id, body.acknowledged_by)
+    acknowledged_by = (
+        body.acknowledged_by if body and body.acknowledged_by else "nurse"
+    )
+    ok = db.acknowledge_alert(alert_id, acknowledged_by)
     if not ok:
         raise HTTPException(status_code=404, detail="Alert not found")
-    return {"status": "acknowledged", "alert_id": alert_id}
+    return {
+        "status": "acknowledged",
+        "alert_id": alert_id,
+        "acknowledged_by": acknowledged_by,
+    }
 
 
 @app.post("/rooms/{room_id}/scenario")

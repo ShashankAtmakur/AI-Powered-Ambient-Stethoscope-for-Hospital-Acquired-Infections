@@ -13,9 +13,7 @@ Supports two patient scenarios:
 
 from __future__ import annotations
 
-import math
 import random
-import time
 from datetime import datetime, timezone
 from typing import Dict, Any
 
@@ -39,11 +37,81 @@ _room_scenarios: Dict[str, PatientScenario] = {}
 _room_detn_progress: Dict[str, float] = {}
 
 
+def _scenario_profile(scenario: PatientScenario) -> Dict[str, float]:
+    """Return baseline physiology profile for a scenario."""
+    if scenario == PatientScenario.PNEUMONIA_LIKE:
+        return {
+            "br_mean": 27.0,
+            "br_std": 2.5,
+            "cough_prob": 0.72,
+            "wheeze_prob": 0.56,
+            "sneeze_prob": 0.10,
+            "snore_prob": 0.14,
+            "spo2_mean": 90.5,
+            "spo2_std": 1.4,
+            "temp_mean": 39.0,
+            "temp_std": 0.35,
+        }
+    if scenario == PatientScenario.URI_LIKE:
+        return {
+            "br_mean": 20.5,
+            "br_std": 2.2,
+            "cough_prob": 0.58,
+            "wheeze_prob": 0.24,
+            "sneeze_prob": 0.62,
+            "snore_prob": 0.10,
+            "spo2_mean": 95.0,
+            "spo2_std": 1.0,
+            "temp_mean": 38.1,
+            "temp_std": 0.30,
+        }
+    if scenario == PatientScenario.SLEEP_APNEA_LIKE:
+        return {
+            "br_mean": 10.5,
+            "br_std": 2.8,
+            "cough_prob": 0.16,
+            "wheeze_prob": 0.14,
+            "sneeze_prob": 0.05,
+            "snore_prob": 0.78,
+            "spo2_mean": 92.8,
+            "spo2_std": 1.6,
+            "temp_mean": 37.1,
+            "temp_std": 0.22,
+        }
+    if scenario == PatientScenario.DETERIORATING:
+        return {
+            "br_mean": DETN_BREATH_RATE_MEAN,
+            "br_std": DETN_BREATH_RATE_STD,
+            "cough_prob": DETN_COUGH_PROB,
+            "wheeze_prob": DETN_WHEEZE_PROB,
+            "sneeze_prob": 0.25,
+            "snore_prob": 0.35,
+            "spo2_mean": DETN_SPO2_MEAN,
+            "spo2_std": DETN_SPO2_STD,
+            "temp_mean": DETN_TEMP_MEAN,
+            "temp_std": DETN_TEMP_STD,
+        }
+    return {
+        "br_mean": NORMAL_BREATH_RATE_MEAN,
+        "br_std": NORMAL_BREATH_RATE_STD,
+        "cough_prob": NORMAL_COUGH_PROB,
+        "wheeze_prob": NORMAL_WHEEZE_PROB,
+        "sneeze_prob": 0.03,
+        "snore_prob": 0.04,
+        "spo2_mean": NORMAL_SPO2_MEAN,
+        "spo2_std": NORMAL_SPO2_STD,
+        "temp_mean": NORMAL_TEMP_MEAN,
+        "temp_std": NORMAL_TEMP_STD,
+    }
+
+
 def set_scenario(room_id: str, scenario: PatientScenario) -> None:
     """Set the simulated patient scenario for a room."""
     _room_scenarios[room_id] = scenario
     if scenario == PatientScenario.NORMAL:
         _room_detn_progress[room_id] = 0.0
+    elif scenario != PatientScenario.DETERIORATING:
+        _room_detn_progress[room_id] = 1.0
 
 
 def get_scenario(room_id: str) -> PatientScenario:
@@ -68,20 +136,25 @@ def generate_features(room_id: str) -> Dict[str, Any]:
         progress = _room_detn_progress.get(room_id, 0.0)
         progress = min(progress + 1.0 / 150.0, 1.0)   # ~5 min at 2 s intervals
         _room_detn_progress[room_id] = progress
-    else:
+    elif scenario == PatientScenario.NORMAL:
         progress = 0.0
+    else:
+        progress = 1.0
 
     p = progress  # shorthand
+    target = _scenario_profile(scenario)
 
     # ── Interpolated physiology parameters ────────────────────────────────────
-    br_mean = _lerp(NORMAL_BREATH_RATE_MEAN, DETN_BREATH_RATE_MEAN, p)
-    br_std = _lerp(NORMAL_BREATH_RATE_STD, DETN_BREATH_RATE_STD, p)
-    cough_prob = _lerp(NORMAL_COUGH_PROB, DETN_COUGH_PROB, p)
-    wheeze_prob = _lerp(NORMAL_WHEEZE_PROB, DETN_WHEEZE_PROB, p)
-    spo2_mean = _lerp(NORMAL_SPO2_MEAN, DETN_SPO2_MEAN, p)
-    spo2_std = _lerp(NORMAL_SPO2_STD, DETN_SPO2_STD, p)
-    temp_mean = _lerp(NORMAL_TEMP_MEAN, DETN_TEMP_MEAN, p)
-    temp_std = _lerp(NORMAL_TEMP_STD, DETN_TEMP_STD, p)
+    br_mean = _lerp(NORMAL_BREATH_RATE_MEAN, target["br_mean"], p)
+    br_std = _lerp(NORMAL_BREATH_RATE_STD, target["br_std"], p)
+    cough_prob = _lerp(NORMAL_COUGH_PROB, target["cough_prob"], p)
+    wheeze_prob = _lerp(NORMAL_WHEEZE_PROB, target["wheeze_prob"], p)
+    sneeze_prob = _lerp(0.03, target["sneeze_prob"], p)
+    snore_prob = _lerp(0.04, target["snore_prob"], p)
+    spo2_mean = _lerp(NORMAL_SPO2_MEAN, target["spo2_mean"], p)
+    spo2_std = _lerp(NORMAL_SPO2_STD, target["spo2_std"], p)
+    temp_mean = _lerp(NORMAL_TEMP_MEAN, target["temp_mean"], p)
+    temp_std = _lerp(NORMAL_TEMP_STD, target["temp_std"], p)
 
     # ── Sample features ───────────────────────────────────────────────────────
     breath_rate = float(np.clip(np.random.normal(br_mean, br_std), 4.0, 50.0))
@@ -92,8 +165,6 @@ def generate_features(room_id: str) -> Dict[str, Any]:
     # coughs_per_min: direct per-window estimate (window = ~2 s; each cough event
     # represents a detected cough in that window; scaled to /min)
     coughs_per_min = cough_confidence * 10.0 if cough_detected else 0.0
-    sneeze_prob = _lerp(0.03, 0.25, p)
-    snore_prob = _lerp(0.04, 0.35, p)
     sneezes_per_min = (
         float(np.clip(np.random.beta(4, 3) * 6.0, 0.0, 12.0))
         if random.random() < sneeze_prob

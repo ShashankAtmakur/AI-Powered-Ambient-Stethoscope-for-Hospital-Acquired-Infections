@@ -46,6 +46,37 @@ Thumbs.db
 *.log
 logs/
 
+# Test and quality artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Environment files
+.env
+
 # Environment variables
 .env
 .env.local
+
+# Jupyter and notebook artifacts
+.ipynb_checkpoints/
+
+# Streamlit runtime/cache
+.streamlit/
+
+# Python tool environments
+.python-version
+
+# Audio/ML artifacts
+models/
+outputs/
+artifacts/
+*.joblib
+*.wav
+
+# Keep project datasets out of git (large/raw data)
+datasets/**
+!datasets/*.csv

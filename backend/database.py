@@ -14,7 +14,7 @@ import sqlite3
 import sys
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Generator, List, Optional
+from typing import Any, Generator, List, Optional
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
@@ -187,7 +187,7 @@ class Database:
         if room_id:
             sql = ("SELECT * FROM alerts WHERE acknowledged=0 AND room_id=? "
                    "ORDER BY timestamp DESC")
-            args = (room_id,)
+            args: tuple[Any, ...] = (room_id,)
         else:
             sql = "SELECT * FROM alerts WHERE acknowledged=0 ORDER BY timestamp DESC"
             args = ()

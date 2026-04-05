@@ -104,11 +104,16 @@ def classify(features: Dict[str, Any]) -> RoomEvent:
     # ── Breath irregularity: coefficient of variation proxy ───────────────────
     # For the simulator we derive it from how far br deviates from the
     # scenario-specific mean.
-    scenario_mean = (
-        DETN_BREATH_RATE_MEAN
-        if event.scenario == PatientScenario.DETERIORATING
-        else NORMAL_BREATH_RATE_MEAN
-    )
+    if event.scenario in {
+        PatientScenario.DETERIORATING,
+        PatientScenario.PNEUMONIA_LIKE,
+        PatientScenario.URI_LIKE,
+    }:
+        scenario_mean = DETN_BREATH_RATE_MEAN
+    elif event.scenario == PatientScenario.SLEEP_APNEA_LIKE:
+        scenario_mean = 10.5
+    else:
+        scenario_mean = NORMAL_BREATH_RATE_MEAN
     event.breath_irregularity = round(
         min(abs(br - scenario_mean) / scenario_mean, 1.0), 3
     )

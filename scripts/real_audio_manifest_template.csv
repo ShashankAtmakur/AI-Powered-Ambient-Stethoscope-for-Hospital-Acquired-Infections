@@ -1,0 +1,8 @@
+audio_path,label,start_s,end_s,source
+relative/path/to/cough_001.wav,cough
+relative/path/to/cough_002.wav,cough
+relative/path/to/sneeze_001.wav,sneeze
+relative/path/to/crackle_001.wav,crackle
+relative/path/to/wheeze_001.wav,wheeze
+relative/path/to/speech_001.wav,speech
+relative/path/to/ambient_001.wav,ambient

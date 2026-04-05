@@ -16,10 +16,9 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _REPO_ROOT)
 sys.path.insert(0, os.path.join(_REPO_ROOT, "common"))
 from simple_broker import SimpleMQTTClient
+from shared.config import DB_PATH
 
 app = Flask(__name__)
-
-DB_PATH = os.path.join(_REPO_ROOT, "server", "hospital_data.db")
 
 class DashboardData:
     def __init__(self):

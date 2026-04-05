@@ -13,6 +13,7 @@ Usage::
 
     python scripts/demo_deterioration.py                  # room 312A
     python scripts/demo_deterioration.py 312B 313A        # custom rooms
+    python scripts/demo_deterioration.py --scenario pneumonia_like 312A
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+import argparse
 
 import requests
 
@@ -33,15 +35,15 @@ API = BACKEND_API_URL.rstrip("/")
 DEFAULT_ROOMS = ["312A"]
 
 
-def deteriorate(room_id: str) -> None:
+def deteriorate(room_id: str, scenario: str) -> None:
     try:
         resp = requests.post(
             f"{API}/rooms/{room_id}/scenario",
-            json={"room_id": room_id, "scenario": "deteriorating"},
+            json={"room_id": room_id, "scenario": scenario},
             timeout=5,
         )
         if resp.ok:
-            print(f"  🔴  Room {room_id} → DETERIORATING scenario injected")
+            print(f"  🔴  Room {room_id} → {scenario.upper()} scenario injected")
         else:
             print(f"  ⚠️  Room {room_id} → {resp.status_code} {resp.text}")
     except requests.RequestException as exc:
@@ -49,19 +51,30 @@ def deteriorate(room_id: str) -> None:
 
 
 def main() -> None:
-    target_rooms = sys.argv[1:] if len(sys.argv) > 1 else DEFAULT_ROOMS
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--scenario",
+        default="deteriorating",
+        choices=["deteriorating", "pneumonia_like", "uri_like", "sleep_apnea_like"],
+        help="Scenario to inject",
+    )
+    parser.add_argument("rooms", nargs="*", help="Room IDs")
+    args = parser.parse_args()
+
+    target_rooms = args.rooms if args.rooms else DEFAULT_ROOMS
     invalid = [r for r in target_rooms if r not in ROOM_IDS]
     if invalid:
         print(f"⚠️  Unknown rooms: {invalid}. Valid rooms: {ROOM_IDS}")
         sys.exit(1)
 
     print("=" * 60)
-    print("🔴  Demo: DETERIORATION episode injection")
+    print("🔴  Demo: scenario injection")
+    print(f"    Scenario: {args.scenario}")
     print(f"    Target rooms: {', '.join(target_rooms)}")
     print("=" * 60)
     print()
     for room_id in target_rooms:
-        deteriorate(room_id)
+        deteriorate(room_id, args.scenario)
         time.sleep(0.1)
 
     print()
